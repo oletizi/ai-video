@@ -57,6 +57,46 @@
 				flex-wrap: wrap;
 			}
 			
+			.story-selector {
+				margin-bottom: 2rem;
+				display: flex;
+				gap: 1rem;
+				justify-content: center;
+				flex-wrap: wrap;
+			}
+			
+			.story-selector h3 {
+				width: 100%;
+				text-align: center;
+				margin-bottom: 1rem;
+				font-size: 1.2rem;
+				font-weight: 600;
+			}
+			
+			.story-btn {
+				background: rgba(255, 255, 255, 0.2);
+				border: 2px solid rgba(255, 255, 255, 0.3);
+				color: white;
+				padding: 0.75rem 1.5rem;
+				border-radius: 8px;
+				font-size: 1rem;
+				cursor: pointer;
+				transition: all 0.3s ease;
+				backdrop-filter: blur(10px);
+			}
+			
+			.story-btn:hover {
+				background: rgba(255, 255, 255, 0.3);
+				border-color: rgba(255, 255, 255, 0.5);
+				transform: translateY(-2px);
+			}
+			
+			.story-btn.active {
+				background: rgba(255, 255, 255, 0.4);
+				border-color: rgba(255, 255, 255, 0.8);
+				box-shadow: 0 4px 20px rgba(255, 255, 255, 0.3);
+			}
+			
 			.export-controls {
 				margin-bottom: 2rem;
 				display: flex;
@@ -235,9 +275,20 @@
 				<button class="theme-btn" data-theme="fire">Fire</button>
 			</div>
 			
+			<div class="story-selector">
+				<h3>Video Story</h3>
+				<button class="story-btn active" data-story="original">Original</button>
+				<button class="story-btn" data-story="waveform">Waveform</button>
+				<button class="story-btn" data-story="particles">Particles</button>
+				<button class="story-btn" data-story="circles">Circles</button>
+				<button class="story-btn" data-story="bars">Frequency Bars</button>
+				<button class="story-btn" data-story="spiral">Spiral</button>
+				<button class="story-btn" data-story="matrix">Matrix</button>
+			</div>
+			
 			<div class="controls">
 				<input type="file" id="audioFile" class="file-input" accept="audio/*" />
-				<label for="audioFile" class="file-label">Choose Audio File</label>
+				<label for="audioFile" id="fileLabel" class="file-label">Choose Audio File</label>
 				<button id="playBtn" disabled>Play</button>
 				<button id="pauseBtn" disabled>Pause</button>
 				<button id="stopBtn" disabled>Stop</button>
@@ -261,37 +312,36 @@
 			</div>
 			
 			<div class="canvas-container">
-				<canvas id="canvas" width="800" height="400"></canvas>
+				<canvas id="visualizationCanvas" width="800" height="400"></canvas>
 			</div>
 		</div>
 
 		<script>
-			// Audio context and analysis setup
-			let audioContext;
-			let audioSource;
-			let analyser;
-			let audioElement;
-			let isPlaying = false;
-			let audioSourceCreated = false;
-			
-			// Canvas setup
-			let canvas;
-			let ctx;
-			let animationId;
-			
-			// Current theme
+			// State variables
 			let currentTheme = 'neon';
-			
-			// Recording and export setup
+			let currentStory = 'original';
+			let audioContext;
+			let analyser;
+			let audioSource;
+			let audioElement;
+			let audioSourceCreated = false;
+			let isPlaying = false;
 			let isRecording = false;
 			let recordedFrames = [];
 			let recordedAudio = null;
 			let mediaRecorder;
 			let recordedChunks = [];
+			let animationId;
 			let ffmpeg;
-			let recordingStartTime;
-			let audioStream;
-			let audioRecorder;
+			let circles = [];
+			let bars = [];
+			let particles = [];
+			let spirals = [];
+			let matrixElements = [];
+			
+			// Canvas setup
+			let canvas;
+			let ctx;
 			
 			// Theme configurations
 			const themes = {
@@ -337,24 +387,21 @@
 				}
 			};
 			
-			// Visualization objects
-			let circles = [];
-			let bars = [];
-			let particles = [];
-			
 			// DOM elements
+			const fileInput = document.getElementById('audioFile');
+			const fileLabel = document.getElementById('fileLabel');
 			const playBtn = document.getElementById('playBtn');
 			const pauseBtn = document.getElementById('pauseBtn');
 			const stopBtn = document.getElementById('stopBtn');
-			const fileInput = document.getElementById('audioFile');
-			const rmsValue = document.getElementById('rmsValue');
-			const audioStatus = document.getElementById('audioStatus');
-			const themeBtns = document.querySelectorAll('.theme-btn');
 			const exportBtn = document.getElementById('exportBtn');
 			const recordBtn = document.getElementById('recordBtn');
 			const exportStatus = document.getElementById('exportStatus');
 			const exportMessage = document.getElementById('exportMessage');
 			const progressFill = document.getElementById('progressFill');
+			const audioStatus = document.getElementById('audioStatus');
+			const rmsValue = document.getElementById('rmsValue');
+			const themeBtns = document.querySelectorAll('.theme-btn');
+			const storyBtns = document.querySelectorAll('.story-btn');
 			
 			// Initialize FFmpeg (simplified - just skip for now)
 			async function initFFmpeg() {
@@ -374,6 +421,18 @@
 				});
 			});
 			
+			// Story selection
+			storyBtns.forEach(btn => {
+				btn.addEventListener('click', () => {
+					const story = btn.dataset.story;
+					setStory(story);
+					
+					// Update active button
+					storyBtns.forEach(b => b.classList.remove('active'));
+					btn.classList.add('active');
+				});
+			});
+			
 			// Set theme function
 			function setTheme(theme) {
 				currentTheme = theme;
@@ -386,6 +445,19 @@
 				draw();
 				
 				console.log(`Theme changed to: ${themeConfig.name}`);
+			}
+			
+			// Set story function
+			function setStory(story) {
+				currentStory = story;
+				
+				// Update visualization objects for new story
+				createVisualizationObjects();
+				
+				// Redraw with new story
+				draw();
+				
+				console.log(`Story changed to: ${story}`);
 			}
 			
 			// Initialize canvas
@@ -403,392 +475,411 @@
 			function createVisualizationObjects() {
 				const themeConfig = themes[currentTheme];
 				
-				// Create circles
+				// Clear existing objects
 				circles = [];
-				for (let i = 0; i < 5; i++) {
-					circles.push({
-						x: 400,
-						y: 200,
-						radius: 20 + i * 10,
-						scale: 1,
-						rotation: 0,
-						color: themeConfig.circleColors[i % themeConfig.circleColors.length],
-						originalColor: themeConfig.circleColors[i % themeConfig.circleColors.length]
-					});
-				}
-				
-				// Create bars
 				bars = [];
-				for (let i = 0; i < 20; i++) {
-					bars.push({
-						x: 50 + i * 35,
-						y: 350,
-						width: 30,
-						height: 50,
-						color: themeConfig.barColors[i % themeConfig.barColors.length],
-						originalColor: themeConfig.barColors[i % themeConfig.barColors.length]
-					});
-				}
-				
-				// Create particles
 				particles = [];
-				for (let i = 0; i < 50; i++) {
-					particles.push({
-						x: Math.random() * 800,
-						y: Math.random() * 400,
-						radius: 2 + Math.random() * 3,
-						color: themeConfig.particleColors[i % themeConfig.particleColors.length],
-						opacity: 0.6,
-						trail: []
-					});
+				spirals = [];
+				matrixElements = [];
+				
+				switch (currentStory) {
+					case 'original':
+						// Create original visualization objects (circles, bars, particles)
+						// Create circles
+						for (let i = 0; i < 5; i++) {
+							circles.push({
+								x: 400,
+								y: 200,
+								radius: 20 + i * 10,
+								scale: 1,
+								rotation: 0,
+								color: themeConfig.circleColors[i % themeConfig.circleColors.length],
+								originalColor: themeConfig.circleColors[i % themeConfig.circleColors.length]
+							});
+						}
+						
+						// Create bars
+						for (let i = 0; i < 20; i++) {
+							bars.push({
+								x: 50 + i * 35,
+								y: 350,
+								width: 30,
+								height: 50,
+								color: themeConfig.barColors[i % themeConfig.barColors.length],
+								originalColor: themeConfig.barColors[i % themeConfig.barColors.length]
+							});
+						}
+						
+						// Create particles
+						for (let i = 0; i < 50; i++) {
+							particles.push({
+								x: Math.random() * 800,
+								y: Math.random() * 400,
+								radius: 2 + Math.random() * 3,
+								color: themeConfig.particleColors[i % themeConfig.particleColors.length],
+								opacity: 0.6,
+								trail: []
+							});
+						}
+						break;
+						
+					case 'waveform':
+						// Waveform doesn't need special objects
+						break;
+						
+					case 'particles':
+						// Create particles
+						for (let i = 0; i < 50; i++) {
+							particles.push({
+								x: Math.random() * canvas.width,
+								y: Math.random() * canvas.height,
+								vx: (Math.random() - 0.5) * 2,
+								vy: (Math.random() - 0.5) * 2,
+								size: Math.random() * 4 + 1,
+								color: themeConfig.particleColors[Math.floor(Math.random() * themeConfig.particleColors.length)]
+							});
+						}
+						break;
+						
+					case 'circles':
+						// Create circles
+						for (let i = 0; i < 8; i++) {
+							circles.push({
+								x: canvas.width / 2,
+								y: canvas.height / 2,
+								radius: 20 + i * 30,
+								angle: (i * Math.PI * 2) / 8,
+								speed: 0.02 + i * 0.005,
+								color: themeConfig.circleColors[i % themeConfig.circleColors.length]
+							});
+						}
+						break;
+						
+					case 'bars':
+						// Create frequency bars
+						const barCount = 32;
+						const barWidth = canvas.width / barCount;
+						for (let i = 0; i < barCount; i++) {
+							bars.push({
+								x: i * barWidth,
+								y: canvas.height,
+								width: barWidth - 2,
+								height: 0,
+								targetHeight: 0,
+								color: themeConfig.barColors[i % themeConfig.barColors.length]
+							});
+						}
+						break;
+						
+					case 'spiral':
+						// Create spiral elements
+						for (let i = 0; i < 100; i++) {
+							spirals.push({
+								angle: (i * Math.PI * 2) / 100,
+								radius: 50 + i * 2,
+								speed: 0.01 + i * 0.001,
+								size: Math.random() * 3 + 1,
+								color: themeConfig.circleColors[i % themeConfig.circleColors.length]
+							});
+						}
+						break;
+					
+					case 'matrix':
+						// Create matrix elements
+						const cols = 20;
+						const rows = 15;
+						const cellWidth = canvas.width / cols;
+						const cellHeight = canvas.height / rows;
+						
+						for (let i = 0; i < cols; i++) {
+							for (let j = 0; j < rows; j++) {
+								matrixElements.push({
+									x: i * cellWidth,
+									y: j * cellHeight,
+									width: cellWidth,
+									height: cellHeight,
+									value: Math.random(),
+									color: themeConfig.circleColors[Math.floor(Math.random() * themeConfig.circleColors.length)]
+								});
+							}
+						}
+						break;
 				}
 			}
 			
 			// Initialize audio context
 			function initAudio() {
-				try {
-					audioContext = new (window.AudioContext || window.webkitAudioContext)();
-					analyser = audioContext.createAnalyser();
-					analyser.fftSize = 256;
-					analyser.smoothingTimeConstant = 0.8;
-					console.log('Audio context initialized successfully');
-				} catch (error) {
-					console.error('Error initializing audio context:', error);
-					audioStatus.textContent = 'Error: Audio context not supported';
-				}
+				audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+				analyser = audioContext.createAnalyser();
+				analyser.fftSize = 256;
+				analyser.smoothingTimeConstant = 0.8;
 			}
 			
-			// Handle file selection
+			// File input handler
 			fileInput.addEventListener('change', (e) => {
-				const file = e.target.files[0];
+				const file = (e.target as HTMLInputElement).files?.[0];
 				if (file) {
 					loadAudioFile(file);
 				}
 			});
 			
 			// Load audio file
-			function loadAudioFile(file) {
+			function loadAudioFile(file: File) {
 				const url = URL.createObjectURL(file);
-				audioElement = new Audio(url);
+				
+				// Create audio element
+				audioElement = new Audio();
+				audioElement.src = url;
 				audioElement.crossOrigin = 'anonymous';
-				audioSourceCreated = false;
 				
-				audioElement.addEventListener('canplay', () => {
-					audioStatus.textContent = `Loaded: ${file.name}`;
-					playBtn.disabled = false;
-					pauseBtn.disabled = true;
-					stopBtn.disabled = true;
-					recordBtn.disabled = false;
-					console.log('Audio file loaded successfully');
-				});
+				// Update UI
+				fileLabel.textContent = file.name;
+				audioStatus.textContent = 'Audio loaded: ' + file.name;
 				
-				audioElement.addEventListener('ended', () => {
-					stopAudio();
-				});
+				// Enable play button
+				playBtn.disabled = false;
+				stopBtn.disabled = false;
+				recordBtn.disabled = false;
 				
-				audioElement.addEventListener('error', (e) => {
-					console.error('Audio loading error:', e);
-					audioStatus.textContent = 'Error loading audio file';
-				});
+				console.log('Audio file loaded:', file.name);
 			}
 			
-			// Play audio
+			// Play button handler
 			playBtn.addEventListener('click', () => {
-				if (audioElement && !isPlaying) {
-					playAudio();
+				if (!audioElement) return;
+				
+				// Resume audio context if suspended
+				if (audioContext.state === 'suspended') {
+					audioContext.resume();
 				}
+				
+				// Connect audio to analyser
+				if (!audioSourceCreated) {
+					audioSource = audioContext.createMediaElementSource(audioElement);
+					audioSource.connect(analyser);
+					analyser.connect(audioContext.destination);
+					audioSourceCreated = true;
+				}
+				
+				audioElement.play();
+				isPlaying = true;
+				
+				// Update UI
+				playBtn.disabled = true;
+				pauseBtn.disabled = false;
+				audioStatus.textContent = 'Playing...';
+				
+				console.log('Audio playback started');
 			});
 			
-			// Pause audio
+			// Pause button handler
 			pauseBtn.addEventListener('click', () => {
-				if (isPlaying) {
-					pauseAudio();
-				}
+				if (!audioElement) return;
+				
+				audioElement.pause();
+				isPlaying = false;
+				
+				// Update UI
+				playBtn.disabled = false;
+				pauseBtn.disabled = true;
+				audioStatus.textContent = 'Paused';
+				
+				console.log('Audio playback paused');
 			});
 			
-			// Stop audio
+			// Stop button handler
 			stopBtn.addEventListener('click', () => {
-				if (isPlaying) {
-					stopAudio();
+				if (!audioElement) return;
+				
+				audioElement.pause();
+				audioElement.currentTime = 0;
+				isPlaying = false;
+				
+				// Update UI
+				playBtn.disabled = false;
+				pauseBtn.disabled = true;
+				audioStatus.textContent = 'Stopped';
+				
+				console.log('Audio playback stopped');
+			});
+			
+			// Record button handler
+			recordBtn.addEventListener('click', () => {
+				if (isRecording) {
+					stopRecording();
+				} else {
+					startRecording();
 				}
 			});
 			
 			// Start recording
-			recordBtn.addEventListener('click', () => {
-				if (audioElement) {
-					if (!isRecording) {
-						startRecording();
-					} else {
-						stopRecording();
-					}
+			function startRecording() {
+				if (!audioElement) {
+					alert('Please load an audio file first');
+					return;
 				}
-			});
-			
-			// Export video
-			exportBtn.addEventListener('click', () => {
-				console.log('Export button clicked');
-				console.log(`Recorded frames: ${recordedFrames.length}`);
-				if (recordedFrames.length > 0) {
-					exportVideo();
+				
+				isRecording = true;
+				recordedFrames = [];
+				recordedChunks = [];
+				
+				// Start audio playback if not already playing
+				if (!isPlaying) {
+					// Resume audio context if suspended
+					if (audioContext.state === 'suspended') {
+						audioContext.resume();
+					}
+					
+					// Connect audio to analyser if not already connected
+					if (!audioSourceCreated) {
+						audioSource = audioContext.createMediaElementSource(audioElement);
+						audioSource.connect(analyser);
+						analyser.connect(audioContext.destination);
+						audioSourceCreated = true;
+					}
+					
+					// Start playing audio
+					audioElement.play();
+					isPlaying = true;
+					
+					// Update play/pause button states
+					playBtn.disabled = true;
+					pauseBtn.disabled = false;
+					audioStatus.textContent = 'Recording and playing...';
 				} else {
-					console.log('No recorded frames available for export');
+					audioStatus.textContent = 'Recording...';
 				}
-			});
-			
-			// Start recording function
-			async function startRecording() {
-				try {
-					isRecording = true;
-					recordedFrames = [];
-					recordedAudio = null;
-					recordBtn.textContent = 'Stop Recording';
-					recordBtn.classList.add('recording');
-					
-					// Start playing audio if not already playing
-					if (!isPlaying) {
-						await playAudio();
-					}
-					
-					// Capture audio stream for export
-					if (audioElement && audioElement.src) {
-						try {
-							// Create a new audio element for recording
-							const recordAudioElement = new Audio(audioElement.src);
-							recordAudioElement.currentTime = audioElement.currentTime;
-							
-							// Create audio context for recording
-							const recordAudioContext = new (window.AudioContext || window.webkitAudioContext)();
-							const audioSource = recordAudioContext.createMediaElementSource(recordAudioElement);
-							const destination = recordAudioContext.createMediaStreamDestination();
-							audioSource.connect(destination);
-							
-							// Store the audio stream and context
-							recordedAudio = {
-								stream: destination.stream,
-								audioElement: recordAudioElement,
-								audioContext: recordAudioContext
-							};
-							
-							// Start playing the recording audio
-							await recordAudioElement.play();
-							
-							console.log('Audio stream captured for recording');
-						} catch (audioError) {
-							console.warn('Could not capture audio for recording:', audioError);
-						}
-					}
-					
-					console.log('Started recording frames...');
-				} catch (error) {
-					console.error('Error starting recording:', error);
-					isRecording = false;
-					recordBtn.textContent = 'Start Recording';
-					recordBtn.classList.remove('recording');
-				}
+				
+				// Update recording UI
+				recordBtn.textContent = 'Stop Recording';
+				recordBtn.style.background = '#ff4444';
+				exportStatus.style.display = 'block';
+				exportMessage.textContent = 'Recording...';
+				
+				console.log('Recording started with auto-playback');
 			}
 			
-			// Stop recording function
+			// Stop recording
 			function stopRecording() {
 				isRecording = false;
+				
+				// Update UI
 				recordBtn.textContent = 'Start Recording';
-				recordBtn.classList.remove('recording');
+				recordBtn.style.background = '';
+				exportMessage.textContent = 'Recording complete! Ready to export.';
+				exportBtn.disabled = false;
 				
-				// Stop and clean up audio recording
-				if (recordedAudio) {
-					recordedAudio.audioElement.pause();
-					recordedAudio.audioContext.close();
-					recordedAudio = null;
-				}
-				
-				// Enable export button if we have recorded frames
-				if (recordedFrames.length > 0) {
-					exportBtn.disabled = false;
-				}
-				
-				console.log(`Stopped recording. Captured ${recordedFrames.length} frames.`);
+				console.log('Recording stopped, frames captured:', recordedFrames.length);
 			}
+			
+			// Export button handler
+			exportBtn.addEventListener('click', () => {
+				if (recordedFrames.length === 0) {
+					alert('No recorded frames to export');
+					return;
+				}
+				
+				exportVideo();
+			});
 			
 			// Export video function
 			async function exportVideo() {
-				console.log(`Starting export with ${recordedFrames.length} frames`);
-				
-				exportStatus.style.display = 'block';
-				exportMessage.textContent = 'Preparing video export...';
-				progressFill.style.width = '10%';
+				exportMessage.textContent = 'Exporting video...';
+				exportBtn.disabled = true;
 				
 				try {
-					exportMessage.textContent = 'Processing recorded frames...';
-					progressFill.style.width = '30%';
+					// Create canvas for video frames
+					const videoCanvas = document.createElement('canvas');
+					videoCanvas.width = 800;
+					videoCanvas.height = 400;
+					const videoCtx = videoCanvas.getContext('2d');
 					
-					// Create a video from the recorded frames
-					const fps = 30;
-					const frameDuration = 1000 / fps;
-					
-					// Create a temporary canvas for video generation
-					const tempCanvas = document.createElement('canvas');
-					tempCanvas.width = 800;
-					tempCanvas.height = 400;
-					const tempCtx = tempCanvas.getContext('2d');
-					
-					console.log('Created temporary canvas for video generation');
-					
-					// Create video stream from the temporary canvas
-					const videoStream = tempCanvas.captureStream(fps);
-					
-					// Create a new audio stream for export
-					let combinedStream = videoStream;
-					if (audioElement && audioElement.src) {
-						try {
-							// Create a new audio element for export
-							const exportAudioElement = new Audio(audioElement.src);
-							exportAudioElement.currentTime = 0; // Start from beginning
-							
-							// Create audio context for export
-							const exportAudioContext = new (window.AudioContext || window.webkitAudioContext)();
-							const audioSource = exportAudioContext.createMediaElementSource(exportAudioElement);
-							const destination = exportAudioContext.createMediaStreamDestination();
-							audioSource.connect(destination);
-							
-							// Combine video and audio streams
-							const tracks = [
-								...videoStream.getVideoTracks(),
-								...destination.stream.getAudioTracks()
-							];
-							combinedStream = new MediaStream(tracks);
-							
-							console.log('Successfully combined video and audio streams for export');
-							
-							// Start playing the export audio
-							await exportAudioElement.play();
-							
-							// Store reference for cleanup
-							window.exportAudioElement = exportAudioElement;
-							window.exportAudioContext = exportAudioContext;
-							
-						} catch (audioError) {
-							console.warn('Could not create audio stream for export:', audioError);
-							// Continue with video only
-						}
+					if (!videoCtx) {
+						throw new Error('Could not get video canvas context');
 					}
 					
-					// Check for supported mime types
-					let mimeType = 'video/webm;codecs=vp9,opus';
-					if (!MediaRecorder.isTypeSupported(mimeType)) {
-						mimeType = 'video/webm;codecs=vp8,opus';
-						if (!MediaRecorder.isTypeSupported(mimeType)) {
-							mimeType = 'video/webm;codecs=vp9';
-							if (!MediaRecorder.isTypeSupported(mimeType)) {
-								mimeType = 'video/webm;codecs=vp8';
-								if (!MediaRecorder.isTypeSupported(mimeType)) {
-									mimeType = 'video/webm';
-									if (!MediaRecorder.isTypeSupported(mimeType)) {
-										mimeType = 'video/mp4';
-									}
-								}
-							}
-						}
-					}
+					// Create MediaRecorder for video stream
+					const videoStream = videoCanvas.captureStream(30); // 30 FPS
 					
-					console.log(`Using MediaRecorder mime type: ${mimeType}`);
+					// Create audio stream from the audio element
+					const audioStream = audioElement.captureStream();
 					
-					const mediaRecorder = new MediaRecorder(combinedStream, {
-						mimeType: mimeType
+					// Combine video and audio streams
+					const combinedStream = new MediaStream([
+						...videoStream.getVideoTracks(),
+						...audioStream.getAudioTracks()
+					]);
+					
+					// Create MediaRecorder
+					mediaRecorder = new MediaRecorder(combinedStream, {
+						mimeType: 'video/webm;codecs=vp9'
 					});
 					
-					const videoChunks = [];
-					
+					// Set up recording
 					mediaRecorder.ondataavailable = (event) => {
 						if (event.data.size > 0) {
-							videoChunks.push(event.data);
-							console.log(`Received video chunk: ${event.data.size} bytes`);
+							recordedChunks.push(event.data);
 						}
 					};
 					
-					mediaRecorder.onstop = async () => {
-						console.log(`Video recording stopped. Total chunks: ${videoChunks.length}`);
-						const videoBlob = new Blob(videoChunks, { type: mimeType });
-						console.log(`Video blob size: ${videoBlob.size} bytes`);
+					mediaRecorder.onstop = () => {
+						// Create download link
+						const blob = new Blob(recordedChunks, { type: 'video/webm' });
+						const url = URL.createObjectURL(blob);
+						const a = document.createElement('a');
+						a.href = url;
+						a.download = 'audio-visualization.webm';
+						a.click();
 						
-						// Clean up audio resources
-						if (window.exportAudioElement) {
-							window.exportAudioElement.pause();
-							window.exportAudioElement = null;
-						}
-						if (window.exportAudioContext) {
-							window.exportAudioContext.close();
-							window.exportAudioContext = null;
-						}
+						// Clean up
+						URL.revokeObjectURL(url);
+						exportMessage.textContent = 'Video exported successfully!';
+						exportBtn.disabled = false;
 						
-						// Download video with audio
-						downloadVideo(videoBlob, mimeType);
+						console.log('Video export completed');
 					};
+					
+					// Calculate export duration
+					const audioDuration = audioElement.duration;
+					const frameDuration = 1 / 30; // 30 FPS
+					const totalFrames = Math.ceil(audioDuration / frameDuration);
+					
+					console.log(`Audio duration: ${audioDuration}s, Total frames: ${totalFrames}`);
 					
 					// Start recording
 					mediaRecorder.start();
-					console.log('Started MediaRecorder');
 					
-					// Replay the recorded frames
-					let frameIndex = 0;
-					const replayInterval = setInterval(() => {
-						if (frameIndex < recordedFrames.length) {
-							// Draw the recorded frame to the temporary canvas
-							const frameCanvas = recordedFrames[frameIndex];
-							tempCtx.clearRect(0, 0, 800, 400);
-							tempCtx.drawImage(frameCanvas, 0, 0);
-							frameIndex++;
-							
-							// Update progress display
-							const progressPercent = Math.round((frameIndex / recordedFrames.length) * 100);
-							exportMessage.textContent = `Processing frames: ${frameIndex}/${recordedFrames.length} (${progressPercent}%)`;
-							progressFill.style.width = `${30 + (progressPercent * 0.4)}%`; // 30% to 70%
-							
-							if (frameIndex % 30 === 0) {
-								console.log(`Processed ${frameIndex}/${recordedFrames.length} frames`);
-							}
-						} else {
-							clearInterval(replayInterval);
-							mediaRecorder.stop();
-							console.log('Finished replaying frames, stopping MediaRecorder');
-						}
-					}, frameDuration);
+					// Play audio from beginning
+					audioElement.currentTime = 0;
+					await audioElement.play();
+					
+					// Export for the full audio duration
+					for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
+						// Calculate which recorded frame to use (loop if needed)
+						const recordedFrameIndex = frameIndex % recordedFrames.length;
+						const recordedFrame = recordedFrames[recordedFrameIndex];
+						
+						// Draw the recorded frame to video canvas
+						videoCtx.drawImage(recordedFrame, 0, 0);
+						
+						// Update progress
+						const progress = (frameIndex / totalFrames) * 100;
+						exportMessage.textContent = `Exporting... ${frameIndex + 1}/${totalFrames} (${progress.toFixed(1)}%)`;
+						progressFill.style.width = `${progress}%`;
+						
+						// Wait for next frame (maintain 30 FPS)
+						await new Promise(resolve => setTimeout(resolve, 33)); // ~30 FPS
+					}
+					
+					// Stop recording
+					mediaRecorder.stop();
+					audioElement.pause();
 					
 				} catch (error) {
-					console.error('Error exporting video:', error);
+					console.error('Export error:', error);
 					exportMessage.textContent = 'Export failed: ' + error.message;
-					
-					setTimeout(() => {
-						exportStatus.style.display = 'none';
-					}, 3000);
+					exportBtn.disabled = false;
 				}
-			}
-			
-			// Helper function to download video with audio
-			function downloadVideo(videoBlob, mimeType) {
-				exportMessage.textContent = 'Downloading video with audio...';
-				progressFill.style.width = '90%';
-				
-				const url = URL.createObjectURL(videoBlob);
-				const link = document.createElement('a');
-				
-				// Determine file extension based on mime type
-				let extension = 'webm';
-				if (mimeType.includes('mp4')) {
-					extension = 'mp4';
-				}
-				
-				link.download = `audio-viz-${currentTheme}-${Date.now()}.${extension}`;
-				link.href = url;
-				link.click();
-				
-				URL.revokeObjectURL(url);
-				console.log(`Video with audio download completed (${extension})`);
-				
-				exportMessage.textContent = `Video export completed! (${extension.toUpperCase()})`;
-				progressFill.style.width = '100%';
-				
-				setTimeout(() => {
-					exportStatus.style.display = 'none';
-				}, 3000);
 			}
 			
 			// Play audio function
@@ -920,17 +1011,120 @@
 			
 			// Draw function
 			function draw() {
+				if (!ctx) return;
+				
 				const themeConfig = themes[currentTheme];
 				
-				// Clear canvas with theme background
+				// Clear canvas
 				ctx.fillStyle = themeConfig.background;
-				ctx.fillRect(0, 0, 800, 400);
+				ctx.fillRect(0, 0, canvas.width, canvas.height);
 				
+				// Check if analyser is available
+				if (!analyser) {
+					// Draw a placeholder when no audio is connected
+					drawPlaceholder(themeConfig);
+					animationId = requestAnimationFrame(draw);
+					return;
+				}
+				
+				// Get audio data
+				const dataArray = new Uint8Array(analyser.frequencyBinCount);
+				analyser.getByteFrequencyData(dataArray);
+				
+				// Calculate RMS value
+				let sum = 0;
+				for (let i = 0; i < dataArray.length; i++) {
+					sum += dataArray[i] * dataArray[i];
+				}
+				const rms = Math.sqrt(sum / dataArray.length);
+				const normalizedRms = rms / 255;
+				
+				// Update RMS display
+				if (rmsValue) {
+					rmsValue.textContent = normalizedRms.toFixed(3);
+				}
+				
+				// Draw based on current story
+				switch (currentStory) {
+					case 'original':
+						drawOriginal(dataArray, normalizedRms, themeConfig);
+						break;
+					case 'waveform':
+						drawWaveform(dataArray, themeConfig);
+						break;
+					case 'particles':
+						drawParticles(normalizedRms, themeConfig);
+						break;
+					case 'circles':
+						drawCircles(normalizedRms, themeConfig);
+						break;
+					case 'bars':
+						drawBars(dataArray, themeConfig);
+						break;
+					case 'spiral':
+						drawSpiral(normalizedRms, themeConfig);
+						break;
+					case 'matrix':
+						drawMatrix(normalizedRms, themeConfig);
+						break;
+				}
+				
+				// Continue animation
+				animationId = requestAnimationFrame(draw);
+				
+				// Capture frame if recording
+				if (isRecording) {
+					const frameCanvas = document.createElement('canvas');
+					frameCanvas.width = canvas.width;
+					frameCanvas.height = canvas.height;
+					const frameCtx = frameCanvas.getContext('2d');
+					
+					if (frameCtx) {
+						// Draw the current canvas content to the frame canvas
+						frameCtx.drawImage(canvas, 0, 0);
+						recordedFrames.push(frameCanvas);
+					}
+				}
+			}
+			
+			// Draw placeholder when no audio is connected
+			function drawPlaceholder(themeConfig) {
+				// Draw a simple placeholder visualization
+				ctx.fillStyle = themeConfig.circleColors[0];
+				ctx.font = '24px Arial';
+				ctx.textAlign = 'center';
+				ctx.fillText('Load an audio file to see visualization', canvas.width / 2, canvas.height / 2);
+				
+				// Draw some animated circles
+				const time = Date.now() * 0.001;
+				for (let i = 0; i < 3; i++) {
+					const x = canvas.width / 2 + Math.cos(time + i) * 50;
+					const y = canvas.height / 2 + Math.sin(time + i) * 50;
+					ctx.beginPath();
+					ctx.arc(x, y, 10, 0, Math.PI * 2);
+					ctx.fillStyle = themeConfig.circleColors[i % themeConfig.circleColors.length];
+					ctx.fill();
+				}
+			}
+			
+			// Drawing functions for different stories
+			function drawOriginal(dataArray, rms, themeConfig) {
 				// Apply theme effects
-				applyThemeEffects();
+				applyThemeEffects(rms);
 				
-				// Draw circles
-				circles.forEach(circle => {
+				// Animate circles based on RMS
+				circles.forEach((circle, i) => {
+					circle.scale = 1 + rms * (i + 1) * 0.5;
+					circle.rotation += rms * 0.1 * (i + 1);
+					
+					// Theme-specific circle effects
+					if (currentTheme === 'neon') {
+						circle.color = `hsl(${200 + i * 30 + rms * 100}, 70%, 60%)`;
+					} else if (currentTheme === 'fire') {
+						circle.color = `hsl(${20 + rms * 40}, 100%, ${50 + rms * 30}%)`;
+					}
+					
+					// Draw circle
 					ctx.save();
 					ctx.translate(circle.x, circle.y);
 					ctx.rotate(circle.rotation);
@@ -944,90 +1138,9 @@
 					ctx.restore();
 				});
 				
-				// Draw bars
-				bars.forEach(bar => {
-					ctx.fillStyle = bar.color;
-					ctx.fillRect(bar.x - bar.width/2, bar.y - bar.height, bar.width, bar.height);
-				});
-				
-				// Draw particles with trails
-				particles.forEach(particle => {
-					// Draw trail
-					if (particle.trail.length > 0) {
-						ctx.strokeStyle = particle.color;
-						ctx.lineWidth = 2;
-						ctx.globalAlpha = 0.3;
-						ctx.beginPath();
-						ctx.moveTo(particle.trail[0].x, particle.trail[0].y);
-						for (let i = 1; i < particle.trail.length; i++) {
-							ctx.lineTo(particle.trail[i].x, particle.trail[i].y);
-						}
-						ctx.stroke();
-					}
-					
-					// Draw particle
-					ctx.globalAlpha = particle.opacity;
-					ctx.fillStyle = particle.color;
-					ctx.beginPath();
-					ctx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
-					ctx.fill();
-				});
-				
-				ctx.globalAlpha = 1;
-				ctx.shadowBlur = 0;
-			}
-			
-			// Main animation loop
-			function animate() {
-				if (!isPlaying || !analyser) return;
-				
-				const bufferLength = analyser.frequencyBinCount;
-				const dataArray = new Uint8Array(bufferLength);
-				analyser.getByteFrequencyData(dataArray);
-				
-				// Calculate RMS value
-				let sum = 0;
-				for (let i = 0; i < bufferLength; i++) {
-					sum += dataArray[i] * dataArray[i];
-				}
-				const rms = Math.sqrt(sum / bufferLength) / 255;
-				
-				// Update RMS display
-				rmsValue.textContent = rms.toFixed(3);
-				
-				// Capture frame if recording
-				if (isRecording) {
-					const frameCanvas = document.createElement('canvas');
-					frameCanvas.width = 800;
-					frameCanvas.height = 400;
-					const frameCtx = frameCanvas.getContext('2d');
-					
-					// Draw the current canvas content to the frame canvas
-					frameCtx.drawImage(canvas, 0, 0);
-					recordedFrames.push(frameCanvas);
-				}
-				
-				// Debug: log RMS value occasionally
-				if (Math.random() < 0.01) {
-					console.log('RMS:', rms, 'Max frequency:', Math.max(...dataArray));
-				}
-				
-				// Animate circles based on RMS
-				circles.forEach((circle, i) => {
-					circle.scale = 1 + rms * (i + 1) * 0.5;
-					circle.rotation += rms * 0.1 * (i + 1);
-					
-					// Theme-specific circle effects
-					if (currentTheme === 'neon') {
-						circle.color = `hsl(${200 + i * 30 + rms * 100}, 70%, 60%)`;
-					} else if (currentTheme === 'fire') {
-						circle.color = `hsl(${20 + rms * 40}, 100%, ${50 + rms * 30}%)`;
-					}
-				});
-				
 				// Animate bars based on frequency data
 				bars.forEach((bar, i) => {
-					const frequencyIndex = Math.floor(i * bufferLength / bars.length);
+					const frequencyIndex = Math.floor(i * dataArray.length / bars.length);
 					const frequencyValue = dataArray[frequencyIndex] / 255;
 					bar.height = 50 + frequencyValue * 200;
 					
@@ -1039,6 +1152,10 @@
 					} else {
 						bar.color = bar.originalColor;
 					}
+					
+					// Draw bar
+					ctx.fillStyle = bar.color;
+					ctx.fillRect(bar.x - bar.width/2, bar.y - bar.height, bar.width, bar.height);
 				});
 				
 				// Animate particles
@@ -1063,19 +1180,166 @@
 					
 					// Pulse opacity based on RMS
 					particle.opacity = 0.3 + rms * 0.7;
+					
+					// Draw trail
+					if (particle.trail.length > 0) {
+						ctx.strokeStyle = particle.color;
+						ctx.lineWidth = 2;
+						ctx.globalAlpha = 0.3;
+						ctx.beginPath();
+						ctx.moveTo(particle.trail[0].x, particle.trail[0].y);
+						for (let j = 1; j < particle.trail.length; j++) {
+							ctx.lineTo(particle.trail[j].x, particle.trail[j].y);
+						}
+						ctx.stroke();
+					}
+					
+					// Draw particle
+					ctx.globalAlpha = particle.opacity;
+					ctx.fillStyle = particle.color;
+					ctx.beginPath();
+					ctx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
+					ctx.fill();
 				});
 				
-				// Draw everything
-				draw();
+				ctx.globalAlpha = 1;
+				ctx.shadowBlur = 0;
+			}
+			
+			function drawWaveform(dataArray, themeConfig) {
+				const sliceWidth = canvas.width / dataArray.length;
+				let x = 0;
 				
-				animationId = requestAnimationFrame(animate);
+				ctx.beginPath();
+				ctx.moveTo(x, canvas.height / 2);
+				
+				for (let i = 0; i < dataArray.length; i++) {
+					const v = dataArray[i] / 128.0;
+					const y = (canvas.height / 2) + (v * canvas.height / 2);
+					
+					if (i === 0) {
+						ctx.moveTo(x, y);
+					} else {
+						ctx.lineTo(x, y);
+					}
+					
+					x += sliceWidth;
+				}
+				
+				ctx.lineTo(canvas.width, canvas.height / 2);
+				ctx.strokeStyle = themeConfig.circleColors[0];
+				ctx.lineWidth = 3;
+				ctx.stroke();
+			}
+			
+			function drawParticles(rms, themeConfig) {
+				// Update particles
+				particles.forEach(particle => {
+					// Move particles
+					particle.x += particle.vx * (1 + rms * 2);
+					particle.y += particle.vy * (1 + rms * 2);
+					
+					// Bounce off edges
+					if (particle.x <= 0 || particle.x >= canvas.width) particle.vx *= -1;
+					if (particle.y <= 0 || particle.y >= canvas.height) particle.vy *= -1;
+					
+					// Draw particle
+					ctx.beginPath();
+					ctx.arc(particle.x, particle.y, particle.size * (1 + rms), 0, Math.PI * 2);
+					ctx.fillStyle = particle.color;
+					ctx.fill();
+				});
+			}
+			
+			function drawCircles(rms, themeConfig) {
+				// Update and draw circles
+				circles.forEach(circle => {
+					circle.angle += circle.speed * (1 + rms);
+					
+					const x = circle.x + Math.cos(circle.angle) * circle.radius * (1 + rms);
+					const y = circle.y + Math.sin(circle.angle) * circle.radius * (1 + rms);
+					
+					ctx.beginPath();
+					ctx.arc(x, y, circle.radius * (0.5 + rms), 0, Math.PI * 2);
+					ctx.fillStyle = circle.color;
+					ctx.fill();
+				});
+			}
+			
+			function drawBars(dataArray, themeConfig) {
+				// Update and draw bars
+				bars.forEach((bar, i) => {
+					const frequencyIndex = Math.floor(i * dataArray.length / bars.length);
+					const frequencyValue = dataArray[frequencyIndex] / 255;
+					
+					bar.targetHeight = frequencyValue * canvas.height * 0.8;
+					bar.height += (bar.targetHeight - bar.height) * 0.1;
+					
+					ctx.fillStyle = bar.color;
+					ctx.fillRect(bar.x, bar.y - bar.height, bar.width, bar.height);
+				});
+			}
+			
+			function drawSpiral(rms, themeConfig) {
+				const centerX = canvas.width / 2;
+				const centerY = canvas.height / 2;
+				
+				// Update and draw spiral elements
+				spirals.forEach(spiral => {
+					spiral.angle += spiral.speed * (1 + rms);
+					
+					const x = centerX + Math.cos(spiral.angle) * spiral.radius * (1 + rms);
+					const y = centerY + Math.sin(spiral.angle) * spiral.radius * (1 + rms);
+					
+					ctx.beginPath();
+					ctx.arc(x, y, spiral.size * (1 + rms), 0, Math.PI * 2);
+					ctx.fillStyle = spiral.color;
+					ctx.fill();
+				});
+			}
+			
+			function drawMatrix(rms, themeConfig) {
+				// Update and draw matrix elements
+				matrixElements.forEach(element => {
+					element.value += (Math.random() - 0.5) * 0.1;
+					element.value = Math.max(0, Math.min(1, element.value));
+					
+					const intensity = element.value * (1 + rms);
+					
+					ctx.fillStyle = `rgba(${themeConfig.colors[0]}, ${intensity})`;
+					ctx.fillRect(element.x, element.y, element.width, element.height);
+				});
 			}
 			
 			// Initialize everything when page loads
 			document.addEventListener('DOMContentLoaded', () => {
-				initCanvas();
+				// Initialize canvas
+				const canvasElement = document.getElementById('visualizationCanvas') as HTMLCanvasElement;
+				if (!canvasElement) {
+					console.error('Canvas element not found');
+					return;
+				}
+				
+				canvas = canvasElement;
+				const context = canvas.getContext('2d');
+				if (!context) {
+					console.error('Could not get 2D context');
+					return;
+				}
+				ctx = context;
+				
+				// Set canvas size
+				canvas.width = 800;
+				canvas.height = 400;
+				
+				// Create initial visualization objects
+				createVisualizationObjects();
+				
+				// Initialize audio context first
 				initAudio();
-				initFFmpeg();
+				
+				// Start animation loop after audio is initialized
+				draw();
 			});
 		</script>
 	</body>
