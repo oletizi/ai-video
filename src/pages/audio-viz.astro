@@ -9,7 +9,6 @@
 		<meta name="viewport" content="width=device-width" />
 		<meta name="generator" content={Astro.generator} />
 		<title>Audio Visualization - AI Video</title>
-		<script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
 		<style>
 			body {
 				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -108,6 +107,7 @@
 			#canvas {
 				border-radius: 8px;
 				box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+				background: rgba(0, 0, 0, 0.8);
 			}
 			
 			.audio-info {
@@ -160,13 +160,14 @@
 			let analyser;
 			let audioElement;
 			let isPlaying = false;
+			let audioSourceCreated = false;
 			
-			// Fabric.js canvas setup
+			// Canvas setup
 			let canvas;
-			let fabricCanvas;
+			let ctx;
 			let animationId;
 			
-			// Audio visualization objects
+			// Visualization objects
 			let circles = [];
 			let bars = [];
 			let particles = [];
@@ -179,73 +180,69 @@
 			const rmsValue = document.getElementById('rmsValue');
 			const audioStatus = document.getElementById('audioStatus');
 			
-			// Initialize Fabric.js canvas
+			// Initialize canvas
 			function initCanvas() {
 				canvas = document.getElementById('canvas');
-				fabricCanvas = new fabric.Canvas('canvas', {
-					backgroundColor: 'rgba(0, 0, 0, 0.8)',
-					selection: false
-				});
+				ctx = canvas.getContext('2d');
 				
 				// Create initial visualization objects
 				createVisualizationObjects();
+				
+				console.log('Canvas initialized successfully');
 			}
 			
-			// Create circles, bars, and particles for visualization
+			// Create visualization objects
 			function createVisualizationObjects() {
 				// Create circles
+				circles = [];
 				for (let i = 0; i < 5; i++) {
-					const circle = new fabric.Circle({
+					circles.push({
+						x: 400,
+						y: 200,
 						radius: 20 + i * 10,
-						fill: `hsl(${200 + i * 30}, 70%, 60%)`,
-						left: 400,
-						top: 200,
-						originX: 'center',
-						originY: 'center',
-						opacity: 0.7
+						scale: 1,
+						rotation: 0,
+						color: `hsl(${200 + i * 30}, 70%, 60%)`
 					});
-					circles.push(circle);
-					fabricCanvas.add(circle);
 				}
 				
 				// Create bars
+				bars = [];
 				for (let i = 0; i < 20; i++) {
-					const bar = new fabric.Rect({
+					bars.push({
+						x: 50 + i * 35,
+						y: 350,
 						width: 30,
 						height: 50,
-						fill: `hsl(${180 + i * 9}, 80%, 60%)`,
-						left: 50 + i * 35,
-						top: 350,
-						originX: 'center',
-						originY: 'bottom',
-						opacity: 0.8
+						color: `hsl(${180 + i * 9}, 80%, 60%)`
 					});
-					bars.push(bar);
-					fabricCanvas.add(bar);
 				}
 				
 				// Create particles
+				particles = [];
 				for (let i = 0; i < 50; i++) {
-					const particle = new fabric.Circle({
+					particles.push({
+						x: Math.random() * 800,
+						y: Math.random() * 400,
 						radius: 2 + Math.random() * 3,
-						fill: `hsl(${Math.random() * 360}, 80%, 70%)`,
-						left: Math.random() * 800,
-						top: Math.random() * 400,
-						originX: 'center',
-						originY: 'center',
+						color: `hsl(${Math.random() * 360}, 80%, 70%)`,
 						opacity: 0.6
 					});
-					particles.push(particle);
-					fabricCanvas.add(particle);
 				}
 			}
 			
 			// Initialize audio context
 			function initAudio() {
-				audioContext = new (window.AudioContext || window.webkitAudioContext)();
-				analyser = audioContext.createAnalyser();
-				analyser.fftSize = 256;
-				analyser.smoothingTimeConstant = 0.8;
+				try {
+					audioContext = new (window.AudioContext || window.webkitAudioContext)();
+					analyser = audioContext.createAnalyser();
+					analyser.fftSize = 256;
+					analyser.smoothingTimeConstant = 0.8;
+					console.log('Audio context initialized successfully');
+				} catch (error) {
+					console.error('Error initializing audio context:', error);
+					audioStatus.textContent = 'Error: Audio context not supported';
+				}
 			}
 			
 			// Handle file selection
@@ -261,16 +258,23 @@
 				const url = URL.createObjectURL(file);
 				audioElement = new Audio(url);
 				audioElement.crossOrigin = 'anonymous';
+				audioSourceCreated = false;
 				
 				audioElement.addEventListener('canplay', () => {
 					audioStatus.textContent = `Loaded: ${file.name}`;
 					playBtn.disabled = false;
 					pauseBtn.disabled = true;
 					stopBtn.disabled = true;
+					console.log('Audio file loaded successfully');
 				});
 				
 				audioElement.addEventListener('ended', () => {
 					stopAudio();
+				});
+				
+				audioElement.addEventListener('error', (e) => {
+					console.error('Audio loading error:', e);
+					audioStatus.textContent = 'Error loading audio file';
 				});
 			}
 			
@@ -296,30 +300,40 @@
 			});
 			
 			// Play audio function
-			function playAudio() {
-				if (!audioContext) {
-					initAudio();
+			async function playAudio() {
+				try {
+					if (!audioContext) {
+						initAudio();
+					}
+					
+					if (audioContext.state === 'suspended') {
+						await audioContext.resume();
+					}
+					
+					// Only create MediaElementSource once per audio element
+					if (!audioSourceCreated) {
+						audioSource = audioContext.createMediaElementSource(audioElement);
+						audioSource.connect(analyser);
+						analyser.connect(audioContext.destination);
+						audioSourceCreated = true;
+						console.log('Audio source connected to analyzer');
+					}
+					
+					await audioElement.play();
+					isPlaying = true;
+					
+					playBtn.disabled = true;
+					pauseBtn.disabled = false;
+					stopBtn.disabled = false;
+					
+					audioStatus.textContent = 'Playing...';
+					
+					// Start animation
+					animate();
+				} catch (error) {
+					console.error('Error playing audio:', error);
+					audioStatus.textContent = 'Error playing audio';
 				}
-				
-				if (audioContext.state === 'suspended') {
-					audioContext.resume();
-				}
-				
-				audioSource = audioContext.createMediaElementSource(audioElement);
-				audioSource.connect(analyser);
-				analyser.connect(audioContext.destination);
-				
-				audioElement.play();
-				isPlaying = true;
-				
-				playBtn.disabled = true;
-				pauseBtn.disabled = false;
-				stopBtn.disabled = false;
-				
-				audioStatus.textContent = 'Playing...';
-				
-				// Start animation
-				animate();
 			}
 			
 			// Pause audio function
@@ -362,39 +376,53 @@
 			
 			// Reset visualization to initial state
 			function resetVisualization() {
-				// Reset circles
-				circles.forEach((circle, i) => {
-					circle.set({
-						scaleX: 1,
-						scaleY: 1,
-						angle: 0
-					});
-				});
-				
-				// Reset bars
-				bars.forEach(bar => {
-					bar.set({
-						height: 50,
-						fill: 'hsl(180, 80%, 60%)'
-					});
-				});
-				
-				// Reset particles
-				particles.forEach(particle => {
-					particle.set({
-						left: Math.random() * 800,
-						top: Math.random() * 400,
-						opacity: 0.6
-					});
-				});
-				
-				fabricCanvas.renderAll();
+				createVisualizationObjects();
+				draw();
 				rmsValue.textContent = '0.00';
+			}
+			
+			// Draw function
+			function draw() {
+				// Clear canvas
+				ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+				ctx.fillRect(0, 0, 800, 400);
+				
+				// Draw circles
+				circles.forEach(circle => {
+					ctx.save();
+					ctx.translate(circle.x, circle.y);
+					ctx.rotate(circle.rotation);
+					ctx.scale(circle.scale, circle.scale);
+					
+					ctx.beginPath();
+					ctx.arc(0, 0, circle.radius, 0, Math.PI * 2);
+					ctx.fillStyle = circle.color;
+					ctx.fill();
+					
+					ctx.restore();
+				});
+				
+				// Draw bars
+				bars.forEach(bar => {
+					ctx.fillStyle = bar.color;
+					ctx.fillRect(bar.x - bar.width/2, bar.y - bar.height, bar.width, bar.height);
+				});
+				
+				// Draw particles
+				particles.forEach(particle => {
+					ctx.globalAlpha = particle.opacity;
+					ctx.fillStyle = particle.color;
+					ctx.beginPath();
+					ctx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
+					ctx.fill();
+				});
+				
+				ctx.globalAlpha = 1;
 			}
 			
 			// Main animation loop
 			function animate() {
-				if (!isPlaying) return;
+				if (!isPlaying || !analyser) return;
 				
 				const bufferLength = analyser.frequencyBinCount;
 				const dataArray = new Uint8Array(bufferLength);
@@ -410,40 +438,23 @@
 				// Update RMS display
 				rmsValue.textContent = rms.toFixed(3);
 				
+				// Debug: log RMS value occasionally
+				if (Math.random() < 0.01) {
+					console.log('RMS:', rms, 'Max frequency:', Math.max(...dataArray));
+				}
+				
 				// Animate circles based on RMS
 				circles.forEach((circle, i) => {
-					const scale = 1 + rms * (i + 1) * 0.5;
-					const rotation = rms * 360 * (i + 1);
-					
-					circle.animate('scaleX', scale, {
-						duration: 100,
-						easing: fabric.util.ease.easeOutQuad
-					});
-					
-					circle.animate('scaleY', scale, {
-						duration: 100,
-						easing: fabric.util.ease.easeOutQuad
-					});
-					
-					circle.animate('angle', rotation, {
-						duration: 200,
-						easing: fabric.util.ease.easeInOutQuad
-					});
+					circle.scale = 1 + rms * (i + 1) * 0.5;
+					circle.rotation += rms * 0.1 * (i + 1);
 				});
 				
 				// Animate bars based on frequency data
 				bars.forEach((bar, i) => {
 					const frequencyIndex = Math.floor(i * bufferLength / bars.length);
 					const frequencyValue = dataArray[frequencyIndex] / 255;
-					const height = 50 + frequencyValue * 200;
-					const hue = 180 + frequencyValue * 180;
-					
-					bar.animate('height', height, {
-						duration: 50,
-						easing: fabric.util.ease.easeOutQuad
-					});
-					
-					bar.set('fill', `hsl(${hue}, 80%, 60%)`);
+					bar.height = 50 + frequencyValue * 200;
+					bar.color = `hsl(${180 + frequencyValue * 180}, 80%, 60%)`;
 				});
 				
 				// Animate particles
@@ -451,27 +462,21 @@
 					const speed = rms * 5;
 					const angle = (i * 137.5 + Date.now() * 0.001) % (Math.PI * 2);
 					
-					particle.animate('left', particle.left + Math.cos(angle) * speed, {
-						duration: 100,
-						easing: fabric.util.ease.easeOutQuad
-					});
-					
-					particle.animate('top', particle.top + Math.sin(angle) * speed, {
-						duration: 100,
-						easing: fabric.util.ease.easeOutQuad
-					});
+					particle.x += Math.cos(angle) * speed;
+					particle.y += Math.sin(angle) * speed;
 					
 					// Wrap particles around screen
-					if (particle.left < 0) particle.left = 800;
-					if (particle.left > 800) particle.left = 0;
-					if (particle.top < 0) particle.top = 400;
-					if (particle.top > 400) particle.top = 0;
+					if (particle.x < 0) particle.x = 800;
+					if (particle.x > 800) particle.x = 0;
+					if (particle.y < 0) particle.y = 400;
+					if (particle.y > 400) particle.y = 0;
 					
 					// Pulse opacity based on RMS
-					particle.set('opacity', 0.3 + rms * 0.7);
+					particle.opacity = 0.3 + rms * 0.7;
 				});
 				
-				fabricCanvas.renderAll();
+				// Draw everything
+				draw();
 				
 				animationId = requestAnimationFrame(animate);
 			}
