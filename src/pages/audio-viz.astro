@@ -49,6 +49,38 @@
 				flex-wrap: wrap;
 			}
 			
+			.theme-selector {
+				margin-bottom: 2rem;
+				display: flex;
+				gap: 1rem;
+				justify-content: center;
+				flex-wrap: wrap;
+			}
+			
+			.theme-btn {
+				background: rgba(255, 255, 255, 0.2);
+				border: 2px solid rgba(255, 255, 255, 0.3);
+				color: white;
+				padding: 0.75rem 1.5rem;
+				border-radius: 8px;
+				font-size: 1rem;
+				cursor: pointer;
+				transition: all 0.3s ease;
+				backdrop-filter: blur(10px);
+			}
+			
+			.theme-btn:hover {
+				background: rgba(255, 255, 255, 0.3);
+				border-color: rgba(255, 255, 255, 0.5);
+				transform: translateY(-2px);
+			}
+			
+			.theme-btn.active {
+				background: rgba(255, 255, 255, 0.4);
+				border-color: rgba(255, 255, 255, 0.8);
+				box-shadow: 0 4px 20px rgba(255, 255, 255, 0.3);
+			}
+			
 			button {
 				background: rgba(255, 255, 255, 0.2);
 				border: 2px solid rgba(255, 255, 255, 0.3);
@@ -135,6 +167,14 @@
 			<h1>Audio Visualization</h1>
 			<p class="description">Upload an audio file and watch the canvas animate to the music's rhythm</p>
 			
+			<div class="theme-selector">
+				<button class="theme-btn active" data-theme="neon">Neon</button>
+				<button class="theme-btn" data-theme="retro">Retro</button>
+				<button class="theme-btn" data-theme="minimal">Minimal</button>
+				<button class="theme-btn" data-theme="cosmic">Cosmic</button>
+				<button class="theme-btn" data-theme="fire">Fire</button>
+			</div>
+			
 			<div class="controls">
 				<input type="file" id="audioFile" class="file-input" accept="audio/*" />
 				<label for="audioFile" class="file-label">Choose Audio File</label>
@@ -167,6 +207,53 @@
 			let ctx;
 			let animationId;
 			
+			// Current theme
+			let currentTheme = 'neon';
+			
+			// Theme configurations
+			const themes = {
+				neon: {
+					name: 'Neon',
+					background: 'rgba(0, 0, 0, 0.9)',
+					circleColors: ['#ff00ff', '#00ffff', '#ffff00', '#ff0080', '#8000ff'],
+					barColors: ['#00ff00', '#ff0000', '#0000ff', '#ffff00', '#ff00ff'],
+					particleColors: ['#ff00ff', '#00ffff', '#ffff00', '#ff0080', '#8000ff'],
+					effects: ['glow', 'pulse', 'trail']
+				},
+				retro: {
+					name: 'Retro',
+					background: 'rgba(20, 20, 20, 0.9)',
+					circleColors: ['#ff6b35', '#f7931e', '#ffd23f', '#f4a261', '#e76f51'],
+					barColors: ['#ff6b35', '#f7931e', '#ffd23f', '#f4a261', '#e76f51'],
+					particleColors: ['#ff6b35', '#f7931e', '#ffd23f', '#f4a261', '#e76f51'],
+					effects: ['scanlines', 'vintage', 'grain']
+				},
+				minimal: {
+					name: 'Minimal',
+					background: 'rgba(255, 255, 255, 0.95)',
+					circleColors: ['#000000', '#333333', '#666666', '#999999', '#cccccc'],
+					barColors: ['#000000', '#333333', '#666666', '#999999', '#cccccc'],
+					particleColors: ['#000000', '#333333', '#666666', '#999999', '#cccccc'],
+					effects: ['clean', 'simple', 'elegant']
+				},
+				cosmic: {
+					name: 'Cosmic',
+					background: 'rgba(10, 5, 30, 0.9)',
+					circleColors: ['#4facfe', '#00f2fe', '#43e97b', '#38f9d7', '#fa709a'],
+					barColors: ['#4facfe', '#00f2fe', '#43e97b', '#38f9d7', '#fa709a'],
+					particleColors: ['#4facfe', '#00f2fe', '#43e97b', '#38f9d7', '#fa709a'],
+					effects: ['stars', 'nebula', 'aurora']
+				},
+				fire: {
+					name: 'Fire',
+					background: 'rgba(20, 10, 5, 0.9)',
+					circleColors: ['#ff4500', '#ff6347', '#ff7f50', '#ff8c00', '#ffa500'],
+					barColors: ['#ff4500', '#ff6347', '#ff7f50', '#ff8c00', '#ffa500'],
+					particleColors: ['#ff4500', '#ff6347', '#ff7f50', '#ff8c00', '#ffa500'],
+					effects: ['flame', 'embers', 'smoke']
+				}
+			};
+			
 			// Visualization objects
 			let circles = [];
 			let bars = [];
@@ -179,6 +266,33 @@
 			const fileInput = document.getElementById('audioFile');
 			const rmsValue = document.getElementById('rmsValue');
 			const audioStatus = document.getElementById('audioStatus');
+			const themeBtns = document.querySelectorAll('.theme-btn');
+			
+			// Theme selection
+			themeBtns.forEach(btn => {
+				btn.addEventListener('click', () => {
+					const theme = btn.dataset.theme;
+					setTheme(theme);
+					
+					// Update active button
+					themeBtns.forEach(b => b.classList.remove('active'));
+					btn.classList.add('active');
+				});
+			});
+			
+			// Set theme function
+			function setTheme(theme) {
+				currentTheme = theme;
+				const themeConfig = themes[theme];
+				
+				// Update visualization objects with new colors
+				createVisualizationObjects();
+				
+				// Redraw with new theme
+				draw();
+				
+				console.log(`Theme changed to: ${themeConfig.name}`);
+			}
 			
 			// Initialize canvas
 			function initCanvas() {
@@ -193,6 +307,8 @@
 			
 			// Create visualization objects
 			function createVisualizationObjects() {
+				const themeConfig = themes[currentTheme];
+				
 				// Create circles
 				circles = [];
 				for (let i = 0; i < 5; i++) {
@@ -202,7 +318,8 @@
 						radius: 20 + i * 10,
 						scale: 1,
 						rotation: 0,
-						color: `hsl(${200 + i * 30}, 70%, 60%)`
+						color: themeConfig.circleColors[i % themeConfig.circleColors.length],
+						originalColor: themeConfig.circleColors[i % themeConfig.circleColors.length]
 					});
 				}
 				
@@ -214,7 +331,8 @@
 						y: 350,
 						width: 30,
 						height: 50,
-						color: `hsl(${180 + i * 9}, 80%, 60%)`
+						color: themeConfig.barColors[i % themeConfig.barColors.length],
+						originalColor: themeConfig.barColors[i % themeConfig.barColors.length]
 					});
 				}
 				
@@ -225,8 +343,9 @@
 						x: Math.random() * 800,
 						y: Math.random() * 400,
 						radius: 2 + Math.random() * 3,
-						color: `hsl(${Math.random() * 360}, 80%, 70%)`,
-						opacity: 0.6
+						color: themeConfig.particleColors[i % themeConfig.particleColors.length],
+						opacity: 0.6,
+						trail: []
 					});
 				}
 			}
@@ -381,11 +500,61 @@
 				rmsValue.textContent = '0.00';
 			}
 			
+			// Apply theme-specific effects
+			function applyThemeEffects(rms) {
+				const themeConfig = themes[currentTheme];
+				
+				switch (currentTheme) {
+					case 'neon':
+						// Add glow effect
+						ctx.shadowBlur = 20;
+						ctx.shadowColor = '#ff00ff';
+						break;
+					case 'retro':
+						// Add scanlines
+						ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+						ctx.lineWidth = 1;
+						for (let i = 0; i < 400; i += 4) {
+							ctx.beginPath();
+							ctx.moveTo(0, i);
+							ctx.lineTo(800, i);
+							ctx.stroke();
+						}
+						break;
+					case 'minimal':
+						// Clean, simple style
+						ctx.shadowBlur = 0;
+						break;
+					case 'cosmic':
+						// Add stars
+						ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+						for (let i = 0; i < 100; i++) {
+							const x = (i * 137.5) % 800;
+							const y = (i * 97.3) % 400;
+							const size = Math.sin(Date.now() * 0.001 + i) * 2 + 1;
+							ctx.beginPath();
+							ctx.arc(x, y, size, 0, Math.PI * 2);
+							ctx.fill();
+						}
+						break;
+					case 'fire':
+						// Add flame effect
+						ctx.shadowBlur = 15;
+						ctx.shadowColor = '#ff4500';
+						break;
+				}
+			}
+			
 			// Draw function
 			function draw() {
-				// Clear canvas
-				ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+				const themeConfig = themes[currentTheme];
+				
+				// Clear canvas with theme background
+				ctx.fillStyle = themeConfig.background;
 				ctx.fillRect(0, 0, 800, 400);
+				
+				// Apply theme effects
+				applyThemeEffects();
 				
 				// Draw circles
 				circles.forEach(circle => {
@@ -408,8 +577,22 @@
 					ctx.fillRect(bar.x - bar.width/2, bar.y - bar.height, bar.width, bar.height);
 				});
 				
-				// Draw particles
+				// Draw particles with trails
 				particles.forEach(particle => {
+					// Draw trail
+					if (particle.trail.length > 0) {
+						ctx.strokeStyle = particle.color;
+						ctx.lineWidth = 2;
+						ctx.globalAlpha = 0.3;
+						ctx.beginPath();
+						ctx.moveTo(particle.trail[0].x, particle.trail[0].y);
+						for (let i = 1; i < particle.trail.length; i++) {
+							ctx.lineTo(particle.trail[i].x, particle.trail[i].y);
+						}
+						ctx.stroke();
+					}
+					
+					// Draw particle
 					ctx.globalAlpha = particle.opacity;
 					ctx.fillStyle = particle.color;
 					ctx.beginPath();
@@ -418,6 +601,7 @@
 				});
 				
 				ctx.globalAlpha = 1;
+				ctx.shadowBlur = 0;
 			}
 			
 			// Main animation loop
@@ -447,6 +631,13 @@
 				circles.forEach((circle, i) => {
 					circle.scale = 1 + rms * (i + 1) * 0.5;
 					circle.rotation += rms * 0.1 * (i + 1);
+					
+					// Theme-specific circle effects
+					if (currentTheme === 'neon') {
+						circle.color = `hsl(${200 + i * 30 + rms * 100}, 70%, 60%)`;
+					} else if (currentTheme === 'fire') {
+						circle.color = `hsl(${20 + rms * 40}, 100%, ${50 + rms * 30}%)`;
+					}
 				});
 				
 				// Animate bars based on frequency data
@@ -454,13 +645,27 @@
 					const frequencyIndex = Math.floor(i * bufferLength / bars.length);
 					const frequencyValue = dataArray[frequencyIndex] / 255;
 					bar.height = 50 + frequencyValue * 200;
-					bar.color = `hsl(${180 + frequencyValue * 180}, 80%, 60%)`;
+					
+					// Theme-specific bar effects
+					if (currentTheme === 'neon') {
+						bar.color = `hsl(${180 + frequencyValue * 180}, 80%, 60%)`;
+					} else if (currentTheme === 'fire') {
+						bar.color = `hsl(${20 + frequencyValue * 40}, 100%, ${50 + frequencyValue * 30}%)`;
+					} else {
+						bar.color = bar.originalColor;
+					}
 				});
 				
 				// Animate particles
 				particles.forEach((particle, i) => {
 					const speed = rms * 5;
 					const angle = (i * 137.5 + Date.now() * 0.001) % (Math.PI * 2);
+					
+					// Add current position to trail
+					particle.trail.push({ x: particle.x, y: particle.y });
+					if (particle.trail.length > 10) {
+						particle.trail.shift();
+					}
 					
 					particle.x += Math.cos(angle) * speed;
 					particle.y += Math.sin(angle) * speed;
