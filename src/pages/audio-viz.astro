@@ -1,0 +1,486 @@
+---
+// Audio visualization page
+---
+
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<meta name="viewport" content="width=device-width" />
+		<meta name="generator" content={Astro.generator} />
+		<title>Audio Visualization - AI Video</title>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
+		<style>
+			body {
+				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+				margin: 0;
+				padding: 0;
+				background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+				min-height: 100vh;
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				justify-content: center;
+				color: white;
+			}
+			
+			.container {
+				text-align: center;
+				max-width: 1200px;
+				padding: 2rem;
+			}
+			
+			h1 {
+				font-size: 2.5rem;
+				margin-bottom: 1rem;
+				font-weight: 700;
+			}
+			
+			.description {
+				font-size: 1.1rem;
+				margin-bottom: 2rem;
+				opacity: 0.9;
+			}
+			
+			.controls {
+				margin-bottom: 2rem;
+				display: flex;
+				gap: 1rem;
+				justify-content: center;
+				flex-wrap: wrap;
+			}
+			
+			button {
+				background: rgba(255, 255, 255, 0.2);
+				border: 2px solid rgba(255, 255, 255, 0.3);
+				color: white;
+				padding: 0.75rem 1.5rem;
+				border-radius: 8px;
+				font-size: 1rem;
+				cursor: pointer;
+				transition: all 0.3s ease;
+				backdrop-filter: blur(10px);
+			}
+			
+			button:hover {
+				background: rgba(255, 255, 255, 0.3);
+				border-color: rgba(255, 255, 255, 0.5);
+				transform: translateY(-2px);
+			}
+			
+			button:disabled {
+				opacity: 0.5;
+				cursor: not-allowed;
+				transform: none;
+			}
+			
+			.file-input {
+				display: none;
+			}
+			
+			.file-label {
+				background: rgba(255, 255, 255, 0.2);
+				border: 2px solid rgba(255, 255, 255, 0.3);
+				color: white;
+				padding: 0.75rem 1.5rem;
+				border-radius: 8px;
+				font-size: 1rem;
+				cursor: pointer;
+				transition: all 0.3s ease;
+				backdrop-filter: blur(10px);
+				display: inline-block;
+			}
+			
+			.file-label:hover {
+				background: rgba(255, 255, 255, 0.3);
+				border-color: rgba(255, 255, 255, 0.5);
+				transform: translateY(-2px);
+			}
+			
+			.canvas-container {
+				background: rgba(0, 0, 0, 0.3);
+				border-radius: 12px;
+				padding: 1rem;
+				margin-bottom: 2rem;
+				backdrop-filter: blur(10px);
+			}
+			
+			#canvas {
+				border-radius: 8px;
+				box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+			}
+			
+			.audio-info {
+				background: rgba(255, 255, 255, 0.1);
+				padding: 1rem;
+				border-radius: 8px;
+				margin-bottom: 1rem;
+				backdrop-filter: blur(10px);
+			}
+			
+			.rms-display {
+				font-size: 1.2rem;
+				font-weight: 600;
+				margin-bottom: 0.5rem;
+			}
+			
+			.audio-status {
+				font-size: 0.9rem;
+				opacity: 0.8;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="container">
+			<h1>Audio Visualization</h1>
+			<p class="description">Upload an audio file and watch the canvas animate to the music's rhythm</p>
+			
+			<div class="controls">
+				<input type="file" id="audioFile" class="file-input" accept="audio/*" />
+				<label for="audioFile" class="file-label">Choose Audio File</label>
+				<button id="playBtn" disabled>Play</button>
+				<button id="pauseBtn" disabled>Pause</button>
+				<button id="stopBtn" disabled>Stop</button>
+			</div>
+			
+			<div class="audio-info">
+				<div class="rms-display">RMS: <span id="rmsValue">0.00</span></div>
+				<div class="audio-status" id="audioStatus">No audio loaded</div>
+			</div>
+			
+			<div class="canvas-container">
+				<canvas id="canvas" width="800" height="400"></canvas>
+			</div>
+		</div>
+
+		<script>
+			// Audio context and analysis setup
+			let audioContext;
+			let audioSource;
+			let analyser;
+			let audioElement;
+			let isPlaying = false;
+			
+			// Fabric.js canvas setup
+			let canvas;
+			let fabricCanvas;
+			let animationId;
+			
+			// Audio visualization objects
+			let circles = [];
+			let bars = [];
+			let particles = [];
+			
+			// DOM elements
+			const playBtn = document.getElementById('playBtn');
+			const pauseBtn = document.getElementById('pauseBtn');
+			const stopBtn = document.getElementById('stopBtn');
+			const fileInput = document.getElementById('audioFile');
+			const rmsValue = document.getElementById('rmsValue');
+			const audioStatus = document.getElementById('audioStatus');
+			
+			// Initialize Fabric.js canvas
+			function initCanvas() {
+				canvas = document.getElementById('canvas');
+				fabricCanvas = new fabric.Canvas('canvas', {
+					backgroundColor: 'rgba(0, 0, 0, 0.8)',
+					selection: false
+				});
+				
+				// Create initial visualization objects
+				createVisualizationObjects();
+			}
+			
+			// Create circles, bars, and particles for visualization
+			function createVisualizationObjects() {
+				// Create circles
+				for (let i = 0; i < 5; i++) {
+					const circle = new fabric.Circle({
+						radius: 20 + i * 10,
+						fill: `hsl(${200 + i * 30}, 70%, 60%)`,
+						left: 400,
+						top: 200,
+						originX: 'center',
+						originY: 'center',
+						opacity: 0.7
+					});
+					circles.push(circle);
+					fabricCanvas.add(circle);
+				}
+				
+				// Create bars
+				for (let i = 0; i < 20; i++) {
+					const bar = new fabric.Rect({
+						width: 30,
+						height: 50,
+						fill: `hsl(${180 + i * 9}, 80%, 60%)`,
+						left: 50 + i * 35,
+						top: 350,
+						originX: 'center',
+						originY: 'bottom',
+						opacity: 0.8
+					});
+					bars.push(bar);
+					fabricCanvas.add(bar);
+				}
+				
+				// Create particles
+				for (let i = 0; i < 50; i++) {
+					const particle = new fabric.Circle({
+						radius: 2 + Math.random() * 3,
+						fill: `hsl(${Math.random() * 360}, 80%, 70%)`,
+						left: Math.random() * 800,
+						top: Math.random() * 400,
+						originX: 'center',
+						originY: 'center',
+						opacity: 0.6
+					});
+					particles.push(particle);
+					fabricCanvas.add(particle);
+				}
+			}
+			
+			// Initialize audio context
+			function initAudio() {
+				audioContext = new (window.AudioContext || window.webkitAudioContext)();
+				analyser = audioContext.createAnalyser();
+				analyser.fftSize = 256;
+				analyser.smoothingTimeConstant = 0.8;
+			}
+			
+			// Handle file selection
+			fileInput.addEventListener('change', (e) => {
+				const file = e.target.files[0];
+				if (file) {
+					loadAudioFile(file);
+				}
+			});
+			
+			// Load audio file
+			function loadAudioFile(file) {
+				const url = URL.createObjectURL(file);
+				audioElement = new Audio(url);
+				audioElement.crossOrigin = 'anonymous';
+				
+				audioElement.addEventListener('canplay', () => {
+					audioStatus.textContent = `Loaded: ${file.name}`;
+					playBtn.disabled = false;
+					pauseBtn.disabled = true;
+					stopBtn.disabled = true;
+				});
+				
+				audioElement.addEventListener('ended', () => {
+					stopAudio();
+				});
+			}
+			
+			// Play audio
+			playBtn.addEventListener('click', () => {
+				if (audioElement && !isPlaying) {
+					playAudio();
+				}
+			});
+			
+			// Pause audio
+			pauseBtn.addEventListener('click', () => {
+				if (isPlaying) {
+					pauseAudio();
+				}
+			});
+			
+			// Stop audio
+			stopBtn.addEventListener('click', () => {
+				if (isPlaying) {
+					stopAudio();
+				}
+			});
+			
+			// Play audio function
+			function playAudio() {
+				if (!audioContext) {
+					initAudio();
+				}
+				
+				if (audioContext.state === 'suspended') {
+					audioContext.resume();
+				}
+				
+				audioSource = audioContext.createMediaElementSource(audioElement);
+				audioSource.connect(analyser);
+				analyser.connect(audioContext.destination);
+				
+				audioElement.play();
+				isPlaying = true;
+				
+				playBtn.disabled = true;
+				pauseBtn.disabled = false;
+				stopBtn.disabled = false;
+				
+				audioStatus.textContent = 'Playing...';
+				
+				// Start animation
+				animate();
+			}
+			
+			// Pause audio function
+			function pauseAudio() {
+				audioElement.pause();
+				isPlaying = false;
+				
+				playBtn.disabled = false;
+				pauseBtn.disabled = true;
+				stopBtn.disabled = false;
+				
+				audioStatus.textContent = 'Paused';
+				
+				// Stop animation
+				if (animationId) {
+					cancelAnimationFrame(animationId);
+				}
+			}
+			
+			// Stop audio function
+			function stopAudio() {
+				audioElement.pause();
+				audioElement.currentTime = 0;
+				isPlaying = false;
+				
+				playBtn.disabled = false;
+				pauseBtn.disabled = true;
+				stopBtn.disabled = true;
+				
+				audioStatus.textContent = 'Stopped';
+				
+				// Stop animation
+				if (animationId) {
+					cancelAnimationFrame(animationId);
+				}
+				
+				// Reset visualization
+				resetVisualization();
+			}
+			
+			// Reset visualization to initial state
+			function resetVisualization() {
+				// Reset circles
+				circles.forEach((circle, i) => {
+					circle.set({
+						scaleX: 1,
+						scaleY: 1,
+						angle: 0
+					});
+				});
+				
+				// Reset bars
+				bars.forEach(bar => {
+					bar.set({
+						height: 50,
+						fill: 'hsl(180, 80%, 60%)'
+					});
+				});
+				
+				// Reset particles
+				particles.forEach(particle => {
+					particle.set({
+						left: Math.random() * 800,
+						top: Math.random() * 400,
+						opacity: 0.6
+					});
+				});
+				
+				fabricCanvas.renderAll();
+				rmsValue.textContent = '0.00';
+			}
+			
+			// Main animation loop
+			function animate() {
+				if (!isPlaying) return;
+				
+				const bufferLength = analyser.frequencyBinCount;
+				const dataArray = new Uint8Array(bufferLength);
+				analyser.getByteFrequencyData(dataArray);
+				
+				// Calculate RMS value
+				let sum = 0;
+				for (let i = 0; i < bufferLength; i++) {
+					sum += dataArray[i] * dataArray[i];
+				}
+				const rms = Math.sqrt(sum / bufferLength) / 255;
+				
+				// Update RMS display
+				rmsValue.textContent = rms.toFixed(3);
+				
+				// Animate circles based on RMS
+				circles.forEach((circle, i) => {
+					const scale = 1 + rms * (i + 1) * 0.5;
+					const rotation = rms * 360 * (i + 1);
+					
+					circle.animate('scaleX', scale, {
+						duration: 100,
+						easing: fabric.util.ease.easeOutQuad
+					});
+					
+					circle.animate('scaleY', scale, {
+						duration: 100,
+						easing: fabric.util.ease.easeOutQuad
+					});
+					
+					circle.animate('angle', rotation, {
+						duration: 200,
+						easing: fabric.util.ease.easeInOutQuad
+					});
+				});
+				
+				// Animate bars based on frequency data
+				bars.forEach((bar, i) => {
+					const frequencyIndex = Math.floor(i * bufferLength / bars.length);
+					const frequencyValue = dataArray[frequencyIndex] / 255;
+					const height = 50 + frequencyValue * 200;
+					const hue = 180 + frequencyValue * 180;
+					
+					bar.animate('height', height, {
+						duration: 50,
+						easing: fabric.util.ease.easeOutQuad
+					});
+					
+					bar.set('fill', `hsl(${hue}, 80%, 60%)`);
+				});
+				
+				// Animate particles
+				particles.forEach((particle, i) => {
+					const speed = rms * 5;
+					const angle = (i * 137.5 + Date.now() * 0.001) % (Math.PI * 2);
+					
+					particle.animate('left', particle.left + Math.cos(angle) * speed, {
+						duration: 100,
+						easing: fabric.util.ease.easeOutQuad
+					});
+					
+					particle.animate('top', particle.top + Math.sin(angle) * speed, {
+						duration: 100,
+						easing: fabric.util.ease.easeOutQuad
+					});
+					
+					// Wrap particles around screen
+					if (particle.left < 0) particle.left = 800;
+					if (particle.left > 800) particle.left = 0;
+					if (particle.top < 0) particle.top = 400;
+					if (particle.top > 400) particle.top = 0;
+					
+					// Pulse opacity based on RMS
+					particle.set('opacity', 0.3 + rms * 0.7);
+				});
+				
+				fabricCanvas.renderAll();
+				
+				animationId = requestAnimationFrame(animate);
+			}
+			
+			// Initialize everything when page loads
+			document.addEventListener('DOMContentLoaded', () => {
+				initCanvas();
+				initAudio();
+			});
+		</script>
+	</body>
+</html> 

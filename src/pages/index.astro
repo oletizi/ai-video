@@ -23,7 +23,7 @@
 			.container {
 				text-align: center;
 				color: white;
-				max-width: 600px;
+				max-width: 800px;
 				padding: 2rem;
 			}
 			h1 {
@@ -37,9 +37,30 @@
 				margin-bottom: 2rem;
 				opacity: 0.9;
 			}
+			.nav {
+				margin-bottom: 2rem;
+			}
+			.nav a {
+				background: rgba(255, 255, 255, 0.2);
+				border: 2px solid rgba(255, 255, 255, 0.3);
+				color: white;
+				padding: 0.75rem 1.5rem;
+				border-radius: 8px;
+				font-size: 1rem;
+				text-decoration: none;
+				transition: all 0.3s ease;
+				backdrop-filter: blur(10px);
+				display: inline-block;
+				margin: 0 0.5rem;
+			}
+			.nav a:hover {
+				background: rgba(255, 255, 255, 0.3);
+				border-color: rgba(255, 255, 255, 0.5);
+				transform: translateY(-2px);
+			}
 			.features {
 				display: grid;
-				grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+				grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
 				gap: 1rem;
 				margin-top: 2rem;
 			}
@@ -48,6 +69,10 @@
 				padding: 1.5rem;
 				border-radius: 10px;
 				backdrop-filter: blur(10px);
+				transition: transform 0.3s ease;
+			}
+			.feature:hover {
+				transform: translateY(-5px);
 			}
 			.feature h3 {
 				margin: 0 0 0.5rem 0;
@@ -65,6 +90,10 @@
 			<h1>AI Video</h1>
 			<p>Advanced AI-powered video processing and generation platform</p>
 			
+			<div class="nav">
+				<a href="/audio-viz">Audio Visualization</a>
+			</div>
+			
 			<div class="features">
 				<div class="feature">
 					<h3>Video Processing</h3>
@@ -77,6 +106,10 @@
 				<div class="feature">
 					<h3>Real-time Analysis</h3>
 					<p>Advanced video analytics and insights</p>
+				</div>
+				<div class="feature">
+					<h3>Audio Visualization</h3>
+					<p>Interactive canvas animations synchronized with audio</p>
 				</div>
 			</div>
 		</div>
