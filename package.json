@@ -1,0 +1,35 @@
+{
+  "name": "ai-video",
+  "version": "1.0.0",
+  "description": "A project for AI-powered video processing and generation.",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "astro:dev": "astro dev",
+    "astro:build": "astro build",
+    "astro:preview": "astro preview",
+    "astro": "astro",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oletizi/ai-video.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/oletizi/ai-video/issues"
+  },
+  "homepage": "https://github.com/oletizi/ai-video#readme",
+  "devDependencies": {
+    "@types/node": "^24.0.4",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "astro": "^5.10.1"
+  }
+}
