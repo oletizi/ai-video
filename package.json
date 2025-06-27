@@ -26,6 +26,8 @@
   },
   "homepage": "https://github.com/oletizi/ai-video#readme",
   "devDependencies": {
+    "@ffmpeg/ffmpeg": "^0.12.7",
+    "@ffmpeg/util": "^0.12.2",
     "@types/node": "^24.0.4",
     "typescript": "^5.8.3"
   },

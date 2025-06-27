@@ -9,7 +9,6 @@
 		<meta name="viewport" content="width=device-width" />
 		<meta name="generator" content={Astro.generator} />
 		<title>Audio Visualization - AI Video</title>
-		<script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.7/dist/umd/ffmpeg.js"></script>
 		<style>
 			body {
 				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -247,7 +246,6 @@
 			<div class="export-controls">
 				<button id="exportBtn" class="export-btn" disabled>Export Video</button>
 				<button id="recordBtn" disabled>Start Recording</button>
-				<button id="stopRecordBtn" disabled>Stop Recording</button>
 			</div>
 			
 			<div class="audio-info">
@@ -287,7 +285,7 @@
 			// Recording and export setup
 			let isRecording = false;
 			let recordedFrames = [];
-			let recordedAudio = [];
+			let recordedAudio = null;
 			let mediaRecorder;
 			let recordedChunks = [];
 			let ffmpeg;
@@ -354,20 +352,14 @@
 			const themeBtns = document.querySelectorAll('.theme-btn');
 			const exportBtn = document.getElementById('exportBtn');
 			const recordBtn = document.getElementById('recordBtn');
-			const stopRecordBtn = document.getElementById('stopRecordBtn');
 			const exportStatus = document.getElementById('exportStatus');
 			const exportMessage = document.getElementById('exportMessage');
 			const progressFill = document.getElementById('progressFill');
 			
-			// Initialize FFmpeg
+			// Initialize FFmpeg (simplified - just skip for now)
 			async function initFFmpeg() {
-				try {
-					ffmpeg = createFFmpeg({ log: true });
-					await ffmpeg.load();
-					console.log('FFmpeg loaded successfully');
-				} catch (error) {
-					console.error('Error loading FFmpeg:', error);
-				}
+				console.log('FFmpeg not available, using WebM export only');
+				// FFmpeg will be undefined, but export will still work with WebM fallback
 			}
 			
 			// Theme selection
@@ -523,204 +515,235 @@
 			
 			// Start recording
 			recordBtn.addEventListener('click', () => {
-				if (audioElement && !isRecording) {
-					startRecording();
-				}
-			});
-			
-			// Stop recording
-			stopRecordBtn.addEventListener('click', () => {
-				if (isRecording) {
-					stopRecording();
+				if (audioElement) {
+					if (!isRecording) {
+						startRecording();
+					} else {
+						stopRecording();
+					}
 				}
 			});
 			
 			// Export video
 			exportBtn.addEventListener('click', () => {
+				console.log('Export button clicked');
+				console.log(`Recorded frames: ${recordedFrames.length}`);
 				if (recordedFrames.length > 0) {
 					exportVideo();
+				} else {
+					console.log('No recorded frames available for export');
 				}
 			});
 			
 			// Start recording function
 			async function startRecording() {
 				try {
-					recordedFrames = [];
-					recordedAudio = [];
-					recordingStartTime = Date.now();
 					isRecording = true;
-					
-					recordBtn.disabled = true;
-					stopRecordBtn.disabled = false;
-					exportBtn.disabled = true;
+					recordedFrames = [];
+					recordedAudio = null;
+					recordBtn.textContent = 'Stop Recording';
+					recordBtn.classList.add('recording');
 					
 					// Start playing audio if not already playing
 					if (!isPlaying) {
 						await playAudio();
 					}
 					
-					// Capture audio stream from the audio element
-					if (audioElement) {
-						audioStream = audioElement.captureStream();
+					// Capture audio stream for export
+					if (audioElement && audioElement.src) {
+						try {
+							// Create a new audio element for recording
+							const recordAudioElement = new Audio(audioElement.src);
+							recordAudioElement.currentTime = audioElement.currentTime;
+							
+							// Create audio context for recording
+							const recordAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+							const audioSource = recordAudioContext.createMediaElementSource(recordAudioElement);
+							const destination = recordAudioContext.createMediaStreamDestination();
+							audioSource.connect(destination);
+							
+							// Store the audio stream and context
+							recordedAudio = {
+								stream: destination.stream,
+								audioElement: recordAudioElement,
+								audioContext: recordAudioContext
+							};
+							
+							// Start playing the recording audio
+							await recordAudioElement.play();
+							
+							console.log('Audio stream captured for recording');
+						} catch (audioError) {
+							console.warn('Could not capture audio for recording:', audioError);
+						}
 					}
 					
-					audioStatus.textContent = 'Recording...';
-					console.log('Recording started');
+					console.log('Started recording frames...');
 				} catch (error) {
 					console.error('Error starting recording:', error);
-					audioStatus.textContent = 'Error starting recording';
+					isRecording = false;
+					recordBtn.textContent = 'Start Recording';
+					recordBtn.classList.remove('recording');
 				}
 			}
 			
 			// Stop recording function
 			function stopRecording() {
 				isRecording = false;
+				recordBtn.textContent = 'Start Recording';
+				recordBtn.classList.remove('recording');
 				
-				recordBtn.disabled = false;
-				stopRecordBtn.disabled = true;
-				exportBtn.disabled = false;
+				// Stop and clean up audio recording
+				if (recordedAudio) {
+					recordedAudio.audioElement.pause();
+					recordedAudio.audioContext.close();
+					recordedAudio = null;
+				}
 				
-				audioStatus.textContent = 'Recording stopped';
-				console.log(`Recording stopped. Captured ${recordedFrames.length} frames`);
+				// Enable export button if we have recorded frames
+				if (recordedFrames.length > 0) {
+					exportBtn.disabled = false;
+				}
+				
+				console.log(`Stopped recording. Captured ${recordedFrames.length} frames.`);
 			}
 			
 			// Export video function
 			async function exportVideo() {
-				if (!ffmpeg) {
-					await initFFmpeg();
-				}
+				console.log(`Starting export with ${recordedFrames.length} frames`);
 				
 				exportStatus.style.display = 'block';
 				exportMessage.textContent = 'Preparing video export...';
 				progressFill.style.width = '10%';
 				
 				try {
-					// Convert frames to video
-					exportMessage.textContent = 'Processing frames...';
+					exportMessage.textContent = 'Processing recorded frames...';
 					progressFill.style.width = '30%';
 					
-					// Create a video stream from recorded frames
+					// Create a video from the recorded frames
 					const fps = 30;
-					const frameDuration = 1000 / fps; // milliseconds per frame
+					const frameDuration = 1000 / fps;
 					
-					// Convert canvas frames to image data
-					const frameImages = [];
-					for (let i = 0; i < recordedFrames.length; i++) {
-						const frameCanvas = recordedFrames[i];
-						const imageData = frameCanvas.toDataURL('image/png');
-						frameImages.push(imageData);
+					// Create a temporary canvas for video generation
+					const tempCanvas = document.createElement('canvas');
+					tempCanvas.width = 800;
+					tempCanvas.height = 400;
+					const tempCtx = tempCanvas.getContext('2d');
+					
+					console.log('Created temporary canvas for video generation');
+					
+					// Create video stream from the temporary canvas
+					const videoStream = tempCanvas.captureStream(fps);
+					
+					// Create a new audio stream for export
+					let combinedStream = videoStream;
+					if (audioElement && audioElement.src) {
+						try {
+							// Create a new audio element for export
+							const exportAudioElement = new Audio(audioElement.src);
+							exportAudioElement.currentTime = 0; // Start from beginning
+							
+							// Create audio context for export
+							const exportAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+							const audioSource = exportAudioContext.createMediaElementSource(exportAudioElement);
+							const destination = exportAudioContext.createMediaStreamDestination();
+							audioSource.connect(destination);
+							
+							// Combine video and audio streams
+							const tracks = [
+								...videoStream.getVideoTracks(),
+								...destination.stream.getAudioTracks()
+							];
+							combinedStream = new MediaStream(tracks);
+							
+							console.log('Successfully combined video and audio streams for export');
+							
+							// Start playing the export audio
+							await exportAudioElement.play();
+							
+							// Store reference for cleanup
+							window.exportAudioElement = exportAudioElement;
+							window.exportAudioContext = exportAudioContext;
+							
+						} catch (audioError) {
+							console.warn('Could not create audio stream for export:', audioError);
+							// Continue with video only
+						}
 					}
 					
-					progressFill.style.width = '50%';
-					exportMessage.textContent = 'Creating video with audio...';
-					
-					// Create a combined stream with video and audio
-					const videoStream = canvas.captureStream(fps);
-					let combinedStream;
-					
-					if (audioStream) {
-						// Combine video and audio streams
-						const tracks = [
-							...videoStream.getVideoTracks(),
-							...audioStream.getAudioTracks()
-						];
-						combinedStream = new MediaStream(tracks);
-					} else {
-						combinedStream = videoStream;
+					// Check for supported mime types
+					let mimeType = 'video/webm;codecs=vp9,opus';
+					if (!MediaRecorder.isTypeSupported(mimeType)) {
+						mimeType = 'video/webm;codecs=vp8,opus';
+						if (!MediaRecorder.isTypeSupported(mimeType)) {
+							mimeType = 'video/webm;codecs=vp9';
+							if (!MediaRecorder.isTypeSupported(mimeType)) {
+								mimeType = 'video/webm;codecs=vp8';
+								if (!MediaRecorder.isTypeSupported(mimeType)) {
+									mimeType = 'video/webm';
+									if (!MediaRecorder.isTypeSupported(mimeType)) {
+										mimeType = 'video/mp4';
+									}
+								}
+							}
+						}
 					}
+					
+					console.log(`Using MediaRecorder mime type: ${mimeType}`);
 					
 					const mediaRecorder = new MediaRecorder(combinedStream, {
-						mimeType: 'video/webm;codecs=vp9,opus'
+						mimeType: mimeType
 					});
 					
-					const chunks = [];
+					const videoChunks = [];
 					
 					mediaRecorder.ondataavailable = (event) => {
 						if (event.data.size > 0) {
-							chunks.push(event.data);
+							videoChunks.push(event.data);
+							console.log(`Received video chunk: ${event.data.size} bytes`);
 						}
 					};
 					
 					mediaRecorder.onstop = async () => {
-						const blob = new Blob(chunks, { type: 'video/webm' });
+						console.log(`Video recording stopped. Total chunks: ${videoChunks.length}`);
+						const videoBlob = new Blob(videoChunks, { type: mimeType });
+						console.log(`Video blob size: ${videoBlob.size} bytes`);
 						
-						// Convert to MP4 using FFmpeg
-						try {
-							exportMessage.textContent = 'Converting to MP4 with audio...';
-							progressFill.style.width = '70%';
-							
-							// Write the video blob to FFmpeg
-							ffmpeg.FS('writeFile', 'input.webm', await fetch(blob).then(r => r.arrayBuffer()));
-							
-							// Run FFmpeg command to convert to MP4 with audio
-							await ffmpeg.run(
-								'-i', 'input.webm',
-								'-c:v', 'libx264',
-								'-c:a', 'aac',
-								'-preset', 'fast',
-								'-crf', '23',
-								'-b:a', '128k',
-								'output.mp4'
-							);
-							
-							// Read the output file
-							const data = ffmpeg.FS('readFile', 'output.mp4');
-							
-							// Create download link
-							const mp4Blob = new Blob([data.buffer], { type: 'video/mp4' });
-							const url = URL.createObjectURL(mp4Blob);
-							
-							const link = document.createElement('a');
-							link.download = `audio-viz-${currentTheme}-${Date.now()}.mp4`;
-							link.href = url;
-							link.click();
-							
-							// Clean up
-							URL.revokeObjectURL(url);
-							ffmpeg.FS('unlink', 'input.webm');
-							ffmpeg.FS('unlink', 'output.mp4');
-							
-							exportMessage.textContent = 'MP4 with audio export completed!';
-							progressFill.style.width = '100%';
-							
-							setTimeout(() => {
-								exportStatus.style.display = 'none';
-							}, 3000);
-							
-						} catch (error) {
-							console.error('FFmpeg conversion error:', error);
-							exportMessage.textContent = 'MP4 conversion failed, downloading WebM instead...';
-							
-							// Fallback to WebM download
-							const url = URL.createObjectURL(blob);
-							const link = document.createElement('a');
-							link.download = `audio-viz-${currentTheme}-${Date.now()}.webm`;
-							link.href = url;
-							link.click();
-							
-							URL.revokeObjectURL(url);
-							
-							setTimeout(() => {
-								exportStatus.style.display = 'none';
-							}, 3000);
+						// Clean up audio resources
+						if (window.exportAudioElement) {
+							window.exportAudioElement.pause();
+							window.exportAudioElement = null;
 						}
+						if (window.exportAudioContext) {
+							window.exportAudioContext.close();
+							window.exportAudioContext = null;
+						}
+						
+						// Download video with audio
+						downloadVideo(videoBlob, mimeType);
 					};
 					
-					// Start recording the combined stream
+					// Start recording
 					mediaRecorder.start();
+					console.log('Started MediaRecorder');
 					
-					// Replay the recorded frames at the correct frame rate
+					// Replay the recorded frames
 					let frameIndex = 0;
 					const replayInterval = setInterval(() => {
 						if (frameIndex < recordedFrames.length) {
-							// Draw the recorded frame to the canvas
+							// Draw the recorded frame to the temporary canvas
 							const frameCanvas = recordedFrames[frameIndex];
-							ctx.clearRect(0, 0, 800, 400);
-							ctx.drawImage(frameCanvas, 0, 0);
+							tempCtx.clearRect(0, 0, 800, 400);
+							tempCtx.drawImage(frameCanvas, 0, 0);
 							frameIndex++;
+							
+							if (frameIndex % 30 === 0) {
+								console.log(`Processed ${frameIndex}/${recordedFrames.length} frames`);
+							}
 						} else {
 							clearInterval(replayInterval);
 							mediaRecorder.stop();
+							console.log('Finished replaying frames, stopping MediaRecorder');
 						}
 					}, frameDuration);
 					
@@ -732,6 +755,35 @@
 						exportStatus.style.display = 'none';
 					}, 3000);
 				}
+			}
+			
+			// Helper function to download video with audio
+			function downloadVideo(videoBlob, mimeType) {
+				exportMessage.textContent = 'Downloading video with audio...';
+				progressFill.style.width = '90%';
+				
+				const url = URL.createObjectURL(videoBlob);
+				const link = document.createElement('a');
+				
+				// Determine file extension based on mime type
+				let extension = 'webm';
+				if (mimeType.includes('mp4')) {
+					extension = 'mp4';
+				}
+				
+				link.download = `audio-viz-${currentTheme}-${Date.now()}.${extension}`;
+				link.href = url;
+				link.click();
+				
+				URL.revokeObjectURL(url);
+				console.log(`Video with audio download completed (${extension})`);
+				
+				exportMessage.textContent = `Video export completed! (${extension.toUpperCase()})`;
+				progressFill.style.width = '100%';
+				
+				setTimeout(() => {
+					exportStatus.style.display = 'none';
+				}, 3000);
 			}
 			
 			// Play audio function
@@ -944,6 +996,8 @@
 					frameCanvas.width = 800;
 					frameCanvas.height = 400;
 					const frameCtx = frameCanvas.getContext('2d');
+					
+					// Draw the current canvas content to the frame canvas
 					frameCtx.drawImage(canvas, 0, 0);
 					recordedFrames.push(frameCanvas);
 				}
