@@ -737,6 +737,11 @@
 							tempCtx.drawImage(frameCanvas, 0, 0);
 							frameIndex++;
 							
+							// Update progress display
+							const progressPercent = Math.round((frameIndex / recordedFrames.length) * 100);
+							exportMessage.textContent = `Processing frames: ${frameIndex}/${recordedFrames.length} (${progressPercent}%)`;
+							progressFill.style.width = `${30 + (progressPercent * 0.4)}%`; // 30% to 70%
+							
 							if (frameIndex % 30 === 0) {
 								console.log(`Processed ${frameIndex}/${recordedFrames.length} frames`);
 							}
